@@ -1,0 +1,132 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-mac:
+    runs-on: [self-hosted, macOS]
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.package.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show environment
+        run: |
+          echo "runner:    $RUNNER_NAME"
+          sw_vers
+          python3 --version
+
+      - name: Build .app
+        run: ./Scripts/build_mac.sh
+
+      - name: Package
+        id: package
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          ditto -c -k --sequesterRsrc --keepParent \
+            "dist/Bois Club YouTube Downloader.app" \
+            "artifacts/Bois-Club-Youtube-Downloader-macOS.zip"
+          VERSION="$(date -u +%Y.%m.%d)-${GITHUB_SHA::7}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          ls -lh artifacts/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-build
+          path: artifacts/Bois-Club-Youtube-Downloader-macOS.zip
+
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build .exe
+        shell: pwsh
+        run: ./Scripts/build_windows.ps1
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          Compress-Archive `
+            -Path 'dist/Bois Club YouTube Downloader/*' `
+            -DestinationPath 'artifacts/Bois-Club-Youtube-Downloader-Windows.zip' `
+            -Force
+          Get-ChildItem artifacts
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: artifacts/Bois-Club-Youtube-Downloader-Windows.zip
+
+  release:
+    needs: [build-mac, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-build
+          path: artifacts
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-build
+          path: artifacts
+
+      - name: Write release notes
+        run: |
+          set -euo pipefail
+          {
+            echo "Automated build from commit \`${GITHUB_SHA}\`."
+            echo ""
+            echo "## Downloads"
+            echo ""
+            echo "- **macOS** — \`Bois-Club-Youtube-Downloader-macOS.zip\` — unzip, drag .app to /Applications, right-click → Open on first launch."
+            echo "- **Windows** — \`Bois-Club-Youtube-Downloader-Windows.zip\` — unzip and run the .exe inside."
+            echo ""
+            echo "ffmpeg is bundled in both builds."
+            echo ""
+            echo "## Commit"
+            echo '```'
+            git log -1 --pretty=%B
+            echo '```'
+          } > release-notes.md
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="v${{ needs.build-mac.outputs.version }}"
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file release-notes.md \
+            artifacts/Bois-Club-Youtube-Downloader-macOS.zip \
+            artifacts/Bois-Club-Youtube-Downloader-Windows.zip
