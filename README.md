@@ -1,5 +1,7 @@
 # Bois Club YouTube Downloader
 
+<img src="./logo.png">
+
 [![Build and Release](https://github.com/bryanthaboi/Bois-Club-Youtube-Downloader/actions/workflows/build.yml/badge.svg)](https://github.com/bryanthaboi/Bois-Club-Youtube-Downloader/actions/workflows/build.yml)
 
 Tiny tkinter GUI around `yt-dlp`. Paste a YouTube URL, pick **Audio (MP3)** or
