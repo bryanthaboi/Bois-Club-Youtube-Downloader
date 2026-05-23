@@ -17,6 +17,23 @@ BUILD="$ROOT/build"
 VENV="$ROOT/.venv-build"
 FFMPEG_BIN="$ROOT/.ffmpeg/ffmpeg"
 
+echo "==> verifying python has tkinter (PyInstaller bundles tk statically and silently produces a broken .app if _tkinter is missing)"
+PY_VER="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+if ! python3 -c "import tkinter" >/dev/null 2>&1; then
+    if command -v brew >/dev/null 2>&1; then
+        echo "    installing python-tk@${PY_VER} via brew"
+        brew install "python-tk@${PY_VER}"
+    else
+        echo "ERROR: python3 ($PY_VER) is missing the tkinter (_tkinter) module." >&2
+        echo "       Install a python build that includes Tk, e.g. 'brew install python-tk@${PY_VER}'." >&2
+        exit 1
+    fi
+    python3 -c "import tkinter" >/dev/null 2>&1 || {
+        echo "ERROR: tkinter still missing after brew install python-tk@${PY_VER}." >&2
+        exit 1
+    }
+fi
+
 echo "==> python venv ($VENV)"
 python3 -m venv "$VENV"
 "$VENV/bin/pip" install --upgrade pip wheel >/dev/null
